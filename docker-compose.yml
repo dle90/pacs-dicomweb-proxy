@@ -1,0 +1,59 @@
+services:
+  dicomweb-proxy:
+    # Auth build (OpenResty + JWT verifier). Verifier no-ops while AUTH_ENABLED=false,
+    # so dev viewing still passes through — but HIS is configured + ready.
+    build: ./auth
+    image: medisync-dicomweb-proxy
+    container_name: medisync-dicomweb-proxy
+    ports:
+      - "8080:80"
+    environment:
+      # Reach Orthanc over the shared dev network by service name.
+      ORTHANC_BACKEND_URL: "http://orthanc:8042"
+
+      # ── Auth (2 sources: HIS now, Telerad later) ──────────────────────────
+      # Policy: READ (GET/HEAD WADO/QIDO) = public; WRITE (STOW POST/PUT/DELETE) =
+      # require valid token. So the viewer reads without a token, but receiving
+      # DICOM (STOW) needs a HIS token.
+      AUTH_ENABLED: "true"
+
+      # ── ĐỌC CA (read) security ─────────────────────────────────────────────
+      # true: WADO/QIDO yêu cầu VIEW token bind đúng studyUid (token.studyUid ==
+      # study trong URL). false = đọc public. ⚠ Viewer PHẢI gửi Bearer view-token,
+      # nếu không reads → 401. Tắt (false) nếu viewer chưa gửi token.
+      READ_AUTH_ENABLED: "true"
+      # aud mong đợi của view token (trống = không kiểm aud; vẫn kiểm sig/exp/iss/study):
+      # READ_JWT_AUDIENCE: "PACS-VIEWER"
+
+      # HIS token source (config variables — non-secret public key, not baked).
+      HIS_JWT_ISSUER: "HIS"
+      HIS_JWT_AUDIENCE: "LOCAL-GATEWAY-SERVER"   # token STOW của gateway (LGS)
+      HIS_JWT_PUBLIC_KEY: |
+        -----BEGIN PUBLIC KEY-----
+        MIIBITANBgkqhkiG9w0BAQEFAAOCAQ4AMIIBCQKCAQBLYR4xlru0jnp95ga0wPp5
+        62lanl36SRxtIXbFfr0K/bMwApgTw1+bMuqVNlGJIyMf9mW3R+bCyx3LDTC62AWh
+        pk1QZr0BXq5+DD93odOzc3W1aA0RWXr90vXCqAOA0JqYHAL6++4JtXlmlq1ikSMv
+        eRJl+V3c/qJljmRPFflfv/ySpW8WnoqK3bNjULZzCxtLMsbIVvMvUMl0uZ9i6bRv
+        zwzd5KmJYl94Wy2wu044hpnFcRZkW4qxpFjatwQ40J1kAP/FXiKQ6CnPtWHkqtFD
+        6qy1r781qJyRGtZHRgS9dUCy7vEx4JAM2fqI4skmqRHnPirhGXKTU3EEpLfpTEqV
+        AgMBAAE=
+        -----END PUBLIC KEY-----
+
+      # Telerad token source — điền khi có (issuer + public key của hệ Telerad):
+      # TELERAD_JWT_ISSUER: "..."
+      # TELERAD_JWT_AUDIENCE: ""
+      # TELERAD_JWT_PUBLIC_KEY: |
+      #   -----BEGIN PUBLIC KEY-----
+      #   ...
+      #   -----END PUBLIC KEY-----
+    networks:
+      - medisync-pacs
+    restart: unless-stopped
+
+# Shared dev network created by the pacs repo:
+#   docker network create medisync-pacs
+# Bring up `pacs` first (provides `orthanc`), then this proxy.
+networks:
+  medisync-pacs:
+    name: medisync-pacs
+    external: true

@@ -1,0 +1,6 @@
+*.log
+.env
+
+# Never commit real key material — supplied at runtime via config variable
+keys/
+*.pem

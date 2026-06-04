@@ -1,0 +1,24 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "medisync-pacs-cache",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-05-01",
+  // workers.dev gives a free *.workers.dev URL for probing before the custom
+  // domain DNS is live. Safe to leave on; OHIF points at the custom domain.
+  "workers_dev": true,
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    // Origin the Worker proxies + caches. TODO: set to the public URL of
+    // pacs-dicomweb-proxy (which handles CORS + auth) in the new topology.
+    // Placeholder below is the intended prod domain — change to the real one.
+    "ORIGIN": "https://api-pacs.medisync.vn"
+  }
+  // Custom domain — uncommented + deployed once the creanova.tech zone is
+  // active in this Cloudflare account. `custom_domain: true` makes wrangler
+  // provision the DNS record + edge cert automatically.
+  // "routes": [
+  //   { "pattern": "pacs.creanova.tech", "custom_domain": true }
+  // ]
+}

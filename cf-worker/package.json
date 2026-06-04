@@ -1,0 +1,14 @@
+{
+  "name": "medisync-pacs-cache",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cloudflare Worker edge-cache in front of the Railway Orthanc PACS",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "wrangler": "^4.93.0"
+  }
+}
