@@ -98,24 +98,100 @@ local function request_study_uid()
   return args["StudyInstanceUID"] or args["0020000D"] or args["studyUID"]
 end
 
--- ĐỌC CA: token phải bind đúng study đang xem (token.studyUid == study trong request).
-local function enforce_study_binding(payload)
-  local bound = payload.studyUid
-  -- studyUid null/absent/empty = MASTER token → cho xem MỌI study + list-all (miễn chữ ký hợp lệ).
-  -- Mục đích: cầm private key test pacs-viewer mà KHÔNG cần full luồng HIS-RIS. CHỈ dùng cho
-  -- test/admin; production HIS phải LUÔN bind studyUid (token thường = scope đúng 1 ca).
+-- Orthanc backend cho server-side lookup (giống medisync_label).
+local _ok_rt, _rt = pcall(require, "medisync_runtime")
+local function orthanc_backend()
+  if _ok_rt and _rt and _rt.orthanc_backend and _rt.orthanc_backend ~= "" then
+    return _rt.orthanc_backend
+  end
+  return "http://orthanc:8042"
+end
+
+-- PatientID mà QIDO đang lọc theo (cho phép liệt kê priors đúng bệnh nhân của token).
+local function request_patient_id()
+  local args = ngx.req.get_uri_args()
+  return args["PatientID"] or args["00100020"]
+end
+
+-- StudyInstanceUID -> DICOM PatientID (0010,0020) qua Orthanc REST. study→patient BẤT BIẾN
+-- nên cache ở shared dict (khai báo nginx.conf: lua_shared_dict medisync_study_patient).
+-- Thiếu dict vẫn chạy (mỗi prior 1 lần lookup). Fail-closed: lỗi/không thấy -> nil -> deny.
+local _sp_cache = ngx.shared.medisync_study_patient
+local function study_patient_id(study_uid)
+  if type(study_uid) ~= "string" or study_uid == "" then return nil end
+  if _sp_cache then
+    local hit = _sp_cache:get(study_uid)
+    if hit then return hit end
+  end
+  local http  = require("resty.http")
+  local cjson = require("cjson.safe")
+  local base  = orthanc_backend()
+  local httpc = http.new()
+  httpc:set_timeout(2000)
+  -- StudyInstanceUID -> Orthanc study id
+  local res, err = httpc:request_uri(base .. "/tools/lookup", {
+    method = "POST", body = study_uid, headers = { ["Content-Type"] = "text/plain" },
+  })
+  if not res or res.status ~= 200 then
+    ngx.log(ngx.WARN, "medisync_auth: lookup study '", study_uid, "' failed: ",
+      err or ("http " .. tostring(res and res.status)))
+    return nil
+  end
+  local arr = cjson.decode(res.body)
+  local sid
+  if type(arr) == "table" then
+    for _, e in ipairs(arr) do
+      if e.Type == "Study" and e.ID then sid = e.ID break end
+    end
+  end
+  if not sid then return nil end
+  -- Orthanc study -> PatientMainDicomTags.PatientID
+  local r2 = httpc:request_uri(base .. "/studies/" .. sid, { method = "GET" })
+  if not r2 or r2.status ~= 200 then return nil end
+  local obj = cjson.decode(r2.body)
+  local pid = obj and obj.PatientMainDicomTags and obj.PatientMainDicomTags.PatientID
+  if type(pid) == "string" and pid ~= "" then
+    if _sp_cache then _sp_cache:set(study_uid, pid, 86400) end   -- cache 24h
+    return pid
+  end
+  return nil
+end
+
+-- ĐỌC CA — cho phép nếu THOẢ MỘT trong 3:
+--   (1) MASTER:        token.studyUid null/absent     -> xem MỌI study + list-all (test/admin).
+--   (2) studyUid khớp: token.studyUid == study trong request (ca được giao, fast-path).
+--   (3) PatientID khớp: PatientID(0010,0020) của study == token.pacsPatientId
+--       -> bác sĩ xem priors/so sánh các ca KHÁC của CÙNG bệnh nhân + QIDO liệt kê theo bệnh nhân.
+local function enforce_read_access(payload)
+  local bound        = payload.studyUid
+  local pacs_patient = payload.pacsPatientId
+
+  -- (1) MASTER
   if type(bound) ~= "string" or bound == "" then
     return
   end
+
   local req_study = request_study_uid()
-  if type(req_study) ~= "string" or req_study == "" then
-    -- Request không khoá vào 1 study cụ thể (vd liệt kê tất cả) -> token bind-study không được phép.
-    return deny(403, "request not scoped to the bound study")
-  end
-  if req_study ~= bound then
-    ngx.log(ngx.WARN, "medisync_auth: study mismatch req='", req_study, "' token='", bound, "'")
+
+  if type(req_study) == "string" and req_study ~= "" then
+    if req_study == bound then return end                   -- (2) studyUid khớp -> khỏi lookup
+    if type(pacs_patient) == "string" and pacs_patient ~= "" then
+      local pid = study_patient_id(req_study)               -- (3) PatientID của study khớp
+      if pid and pid == pacs_patient then return end
+    end
+    ngx.log(ngx.WARN, "medisync_auth: deny req_study='", req_study,
+      "' token.studyUid='", bound, "' token.pacsPatientId='", tostring(pacs_patient), "'")
     return deny(403, "token not valid for this study")
   end
+
+  -- Request KHÔNG khoá 1 study (QIDO list/search) -> cho nếu lọc đúng bệnh nhân của token.
+  local req_patient = request_patient_id()
+  if type(pacs_patient) == "string" and pacs_patient ~= ""
+     and type(req_patient) == "string" and req_patient == pacs_patient then
+    return
+  end
+
+  return deny(403, "request not scoped to the bound study or patient")
 end
 
 function _M.verify()
@@ -130,10 +206,10 @@ function _M.verify()
   if is_read and not cfg.read_enabled then return end
 
   if is_read then
-    -- Bảo mật ĐỌC CA: VIEW token bind đúng studyUid.
+    -- Bảo mật ĐỌC CA: token thoả MỘT trong 3 (master / studyUid khớp / pacsPatientId khớp).
     local jwt_obj, matched = authenticate(cfg.read_audience)
     local payload = jwt_obj.payload or {}
-    enforce_study_binding(payload)
+    enforce_read_access(payload)
     ngx.req.set_header("X-Medisync-Token-Source", matched.name)
     ngx.req.set_header("X-Medisync-User", payload.sub or "")
     ngx.req.set_header("X-Medisync-User-Uuid", payload.uuid or "")

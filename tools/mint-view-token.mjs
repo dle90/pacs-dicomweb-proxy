@@ -8,7 +8,7 @@
 //                      test the viewer locally WITHOUT the full HIS-RIS issue flow.
 //
 // Dependency-free (Node built-ins only). Usage:
-//   node mint-view-token.mjs --key <private_key_pkcs8.pem> [--study <UID>] \
+//   node mint-view-token.mjs --key <private_key_pkcs8.pem> [--study <UID>] [--patient <PatientID>] \
 //        [--iss HIS] [--aud PACS-VIEWER] [--sub tester] [--uuid u-1] [--ttl 30]
 //
 // Open the viewer with the token in the URL HASH (never logged server-side):
@@ -38,6 +38,8 @@ const payload = {
   uuid: args.uuid ?? 'u-test',
   // studyUid present → scoped to that study; null → MASTER (any study + list-all).
   studyUid: args.study ?? null,
+  // pacsPatientId present → also allow that patient's OTHER studies (priors/comparison).
+  pacsPatientId: args.patient ?? null,
   iat: now,
   exp: now + ttlMin * 60,
 };
