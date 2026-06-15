@@ -30,22 +30,29 @@ services:
       HIS_JWT_AUDIENCE: "LOCAL-GATEWAY-SERVER"   # token STOW của gateway (LGS)
       HIS_JWT_PUBLIC_KEY: |
         -----BEGIN PUBLIC KEY-----
-        MIIBITANBgkqhkiG9w0BAQEFAAOCAQ4AMIIBCQKCAQBLYR4xlru0jnp95ga0wPp5
-        62lanl36SRxtIXbFfr0K/bMwApgTw1+bMuqVNlGJIyMf9mW3R+bCyx3LDTC62AWh
-        pk1QZr0BXq5+DD93odOzc3W1aA0RWXr90vXCqAOA0JqYHAL6++4JtXlmlq1ikSMv
-        eRJl+V3c/qJljmRPFflfv/ySpW8WnoqK3bNjULZzCxtLMsbIVvMvUMl0uZ9i6bRv
-        zwzd5KmJYl94Wy2wu044hpnFcRZkW4qxpFjatwQ40J1kAP/FXiKQ6CnPtWHkqtFD
-        6qy1r781qJyRGtZHRgS9dUCy7vEx4JAM2fqI4skmqRHnPirhGXKTU3EEpLfpTEqV
+        MIIBITANBgkqhkiG9w0BAQEFAAOCAQ4AMIIBCQKCAQBlmtoQxJgsQzx/5ZUWDZ2v
+        UiGYskDiAA+UiSid5Ql9r+F23OqvPCDtcl2YEZ4+tF15PBYWuk6hXSmkqm8x47x6
+        Te9XMR7sqxNDlOL2rP6E7U7zVosd0oWr8voQKDSsws146iaMEA0rl09lkTfQgElu
+        yRdtXrmC+lGtce5Q7IlVLMF0BSz3VUrEAFFgVRJa8n27oi2UBfDqYJR9NzHsMzWp
+        4fTW2iY0qYiRwk6N2SHvlIAfZnOGFP158lU9VoCNk8xK59gW4M6ukCmtCGRhH/ZB
+        OMzHwz9qdszRlg2bzPdjYUH1BmcgfeF8GeNeRKMkm1uR+7ECBdjHFEhxCqPjlII7
         AgMBAAE=
         -----END PUBLIC KEY-----
 
-      # Telerad token source — điền khi có (issuer + public key của hệ Telerad):
-      # TELERAD_JWT_ISSUER: "..."
-      # TELERAD_JWT_AUDIENCE: ""
-      # TELERAD_JWT_PUBLIC_KEY: |
-      #   -----BEGIN PUBLIC KEY-----
-      #   ...
-      #   -----END PUBLIC KEY-----
+      # Telerad token source — view-token đọc ca do telerad-core phát hành (iss=TELERAD).
+      # Verify bằng public key của telerad-core. Telerad không STOW nên audience để trống.
+      TELERAD_JWT_ISSUER: "TELERAD"
+      TELERAD_JWT_AUDIENCE: ""
+      TELERAD_JWT_PUBLIC_KEY: |
+        -----BEGIN PUBLIC KEY-----
+        MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjg/uWBMNK2brRtU5iIRp
+        uDKkVkQ92KrAnXcEeHEG7iRA+X0OaMwXxfMEYp6wwrbGkEDA6EMzFg48seZpNGkU
+        vp00u6weo8q9H2nil0JCpKQdMRQbEgiL+FGrOACWWOGRpKpYd8DSGXmsqf+AenqC
+        7nf6fssTY2C/fDGuK4KkcVYpr/JqX0LGB7PNnACuaxdhkQKjh62u8jPWNsyQlF0x
+        MkSoeEjLTNchVzyZ7w/NtvGJvxSqwJRChzwBwr28yCPIr3vWVLqkoUrM6d+AdWss
+        0sYrPjaylOrfoxhuZO4T91sG0Xh4cU4Lqlduab+SB/PJnH1fAe7SxljxYVr/yHAH
+        8wIDAQAB
+        -----END PUBLIC KEY-----
     networks:
       - medisync-pacs
     restart: unless-stopped

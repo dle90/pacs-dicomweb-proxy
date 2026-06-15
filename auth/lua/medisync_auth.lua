@@ -162,7 +162,24 @@ end
 --   (2) studyUid khớp: token.studyUid == study trong request (ca được giao, fast-path).
 --   (3) PatientID khớp: PatientID(0010,0020) của study == token.pacsPatientId
 --       -> bác sĩ xem priors/so sánh các ca KHÁC của CÙNG bệnh nhân + QIDO liệt kê theo bệnh nhân.
-local function enforce_read_access(payload)
+local function enforce_read_access(payload, source)
+  -- Chỉ chấp nhận VIEW token (type = PACS-VIEWER): chặn token đăng nhập (STAFF) /
+  -- STOW dùng để đọc ảnh, dù chúng hợp lệ về chữ ký/iss/aud.
+  if payload.type ~= "PACS-VIEWER" then
+    return deny(403, "token is not a PACS viewer token")
+  end
+
+  -- Token do TELERAD phát hành (source "telerad", verify bằng public key telerad):
+  -- ĐỌC ĐƯỢC MỌI ca (không ràng buộc studyUid/pacsPatientId), NHƯNG KHÔNG được dùng
+  -- chức năng liệt kê ca (QIDO list/search không khoá 1 study cụ thể).
+  if source and source.name == "telerad" then
+    local req_study = request_study_uid()
+    if type(req_study) == "string" and req_study ~= "" then
+      return   -- truy cập 1 study cụ thể -> cho qua (đọc mọi ca)
+    end
+    return deny(403, "telerad token cannot list studies")
+  end
+
   local bound        = payload.studyUid
   local pacs_patient = payload.pacsPatientId
 
@@ -209,7 +226,7 @@ function _M.verify()
     -- Bảo mật ĐỌC CA: token thoả MỘT trong 3 (master / studyUid khớp / pacsPatientId khớp).
     local jwt_obj, matched = authenticate(cfg.read_audience)
     local payload = jwt_obj.payload or {}
-    enforce_read_access(payload)
+    enforce_read_access(payload, matched)
     ngx.req.set_header("X-Medisync-Token-Source", matched.name)
     ngx.req.set_header("X-Medisync-User", payload.sub or "")
     ngx.req.set_header("X-Medisync-User-Uuid", payload.uuid or "")
