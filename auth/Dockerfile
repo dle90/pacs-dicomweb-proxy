@@ -10,11 +10,14 @@ RUN apk add --no-cache gettext \
  && luarocks install lua-resty-http
 
 # Lua modules + nginx config TEMPLATE (${ORTHANC_BACKEND_URL} substituted at start)
-COPY lua/medisync_auth.lua  /etc/nginx/lua/medisync_auth.lua
-COPY lua/medisync_label.lua /etc/nginx/lua/medisync_label.lua
-COPY nginx.conf           /etc/nginx/nginx.conf.template
+# Paths are relative to the REPO ROOT build context (Railway builds with the repo
+# root as context + dockerfilePath=auth/Dockerfile; docker-compose uses
+# context: . + dockerfile: auth/Dockerfile to match).
+COPY auth/lua/medisync_auth.lua  /etc/nginx/lua/medisync_auth.lua
+COPY auth/lua/medisync_label.lua /etc/nginx/lua/medisync_label.lua
+COPY auth/nginx.conf           /etc/nginx/nginx.conf.template
 
-COPY docker-entrypoint.sh /usr/src/entrypoint.sh
+COPY auth/docker-entrypoint.sh /usr/src/entrypoint.sh
 RUN chmod +x /usr/src/entrypoint.sh
 
 EXPOSE 80

@@ -2,7 +2,11 @@ services:
   dicomweb-proxy:
     # Auth build (OpenResty + JWT verifier). Verifier no-ops while AUTH_ENABLED=false,
     # so dev viewing still passes through — but HIS is configured + ready.
-    build: ./auth
+    # Build from the repo root so auth/Dockerfile's root-relative COPYs resolve
+    # (mirrors Railway: root context + dockerfilePath=auth/Dockerfile).
+    build:
+      context: .
+      dockerfile: auth/Dockerfile
     image: medisync-dicomweb-proxy
     container_name: medisync-dicomweb-proxy
     ports:
