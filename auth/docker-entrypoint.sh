@@ -4,6 +4,16 @@ set -e
 # ── Orthanc backend ──────────────────────────────────────────────────────────
 : "${ORTHANC_BACKEND_URL:=http://orthanc:8042}"
 
+# ── DNS resolver ──────────────────────────────────────────────────────────────
+# Used by proxy_pass ($orthanc, re-resolved per request) AND the Lua cosockets
+# (resty.http). On Railway the backend (pacs.railway.internal) is IPv6 private DNS
+# with a new IP per redeploy; startup-time resolution would crash/go stale. Feed
+# nginx the container's own resolver. (Local docker-compose falls back to Docker DNS.)
+RESOLVER="$(awk '/^nameserver/ {print $2; exit}' /etc/resolv.conf)"
+: "${RESOLVER:=127.0.0.11}"
+case "$RESOLVER" in *:*) RESOLVER="[$RESOLVER]" ;; esac   # nginx wants IPv6 in [brackets]
+export RESOLVER
+
 # ── Auth: TWO token sources (HIS + Telerad), each its own key/issuer/audience ──
 : "${AUTH_ENABLED:=false}"
 : "${HIS_JWT_PUBLIC_KEY:=}";      : "${HIS_JWT_PUBLIC_KEY_BASE64:=}"
@@ -83,7 +93,7 @@ return { orthanc_backend = "${ORTHANC_BACKEND_URL}" }
 EOF
 
 # ── Render nginx config ──────────────────────────────────────────────────────
-envsubst '${ORTHANC_BACKEND_URL}' \
+envsubst '${ORTHANC_BACKEND_URL} ${RESOLVER}' \
   < /etc/nginx/nginx.conf.template \
   > /usr/local/openresty/nginx/conf/nginx.conf
 
